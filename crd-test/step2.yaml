@@ -1,0 +1,75 @@
+---
+apiVersion: "magalix.com/v1"
+kind: ConfigMonitor
+metadata:
+  name: flaskapp-config-monitor
+  namespace: crd-test
+spec:
+  configMap: flaskapp-config
+  podSelector:
+    app: frontend
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flaskapp-config
+  namespace: crd-test
+data:
+  config.cfg:
+    MSG="Welcome to Kubernetes!"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator
+  namespace: crd-test
+  labels:
+    app: operator
+spec:
+  selector:
+    matchLabels:
+      app: operator
+  template:
+    metadata:
+      labels:
+        app: operator
+    spec:
+      serviceAccount: crd-operator-sa
+      containers:
+      - name: proxycontainer
+        image: lachlanevenson/k8s-kubectl
+        command: ["kubectl","proxy","--port=8001"]
+      - name: app
+        image: magalixcorp/operator:pwang
+        env:
+          - name: res_namespace
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: crd-test
+  labels:
+    app: frontend
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: app
+        image: magalixcorp/flask:operator
+        volumeMounts:
+        - name: config-vol
+          mountPath: /config
+      volumes:
+      - name: config-vol
+        configMap:
+          name: flaskapp-config

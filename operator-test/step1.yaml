@@ -1,0 +1,114 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: operator-test
+  labels:
+    name: operator-test
+---
+# CRD connecting a ConfigMap with a set of pods which needs to
+# be restarted when the ConfigMap changes
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: configwatchers.k8spatterns.io
+  namespace: operator-test
+spec:
+  scope: Namespaced
+  group: k8spatterns.io
+  versions:
+  - name: v1
+    # Enabled
+    served: true
+    # The version stored in the backend
+    storage: true
+    # Validation schema
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              configMap:
+                type: string
+                description: Name of the ConfigMap to monitor for changes
+              podSelector:
+                type: object
+                description: Label selector used for selecting Pods
+                additionalProperties:
+                  type: string
+    # Additional columns to print when in kubectl get
+    additionalPrinterColumns:
+    - name: configmap
+      description: Name of ConfigMap to watch
+      type: string
+      jsonPath: .spec.configMap
+    - name: podselector
+      description: Selector for Pods to restart
+      type: string
+      jsonPath: .spec.podSelector
+  names:
+    # Kind of this CRD
+    kind: ConfigWatcher
+    # How to access them via client and REST api
+    singular: configwatcher
+    plural: configwatchers
+    # How to access the CRDs as well (e.g. with "kubectl get cw")
+    shortNames: [ cw ]
+    # Adds Configwatcher to the "all" category (e.g. "kubectl get all")
+    categories: [ all ]
+
+---
+# Service account required for watching to resources
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: config-watcher-operator-sa
+  namespace: operator-test
+
+---
+# Role for allowing access to our CRD
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: config-watcher-crd-role
+  namespace: operator-test
+rules:
+- apiGroups:
+  - k8spatterns.io
+  resources:
+  - configwatchers
+  - configwatchers/finalizers
+  verbs: [ get, list, create, update, delete, deletecollection, watch ]
+
+---
+# Bind to an appropriate permission
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: config-watcher-core-api-rb
+  namespace: operator-test
+subjects:
+- kind: ServiceAccount
+  name: config-watcher-operator-sa
+roleRef:
+  name: edit
+  kind: ClusterRole
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: config-watcher-crd-rb
+  namespace: operator-test
+subjects:
+- kind: ServiceAccount
+  name: config-watcher-operator-sa
+  namespace: operator-test
+roleRef:
+  name: config-watcher-crd-role
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+
+---
